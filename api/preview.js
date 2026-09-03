@@ -6,10 +6,13 @@
 // On a 503/429 (overload / rate-limit) the primary model falls back to the
 // GEMINI_FALLBACK_MODELS in order, so the preview keeps working when Pro is busy.
 //
-// Takes the base garment photo + the customer's NAME/NUMBER and asks Google
-// Gemini's image model to render an AI preview with the embroidery applied.
+// Takes the real lifestyle photo (baseImageUrl — the image set for the chosen
+// variant) and asks Google Gemini's image model to swap ONLY the embroidered
+// NAME/NUMBER on the back-facing sweatshirt, keeping the rest of the photo
+// (both models, faces, front design, background) identical.
 // Synchronous: the request waits for Gemini and returns the image inline as a
 // data URL (no storage/queue needed — simplest thing that deploys on Vercel).
+// baseImageUrl may be an http(s) URL or an inline data:image/...;base64 URL.
 
 // Gemini IMAGE model ("Nano Banana" family). Override via env GEMINI_MODEL.
 // Default: Nano Banana Pro (Gemini 3 Pro Image) — best-in-class text rendering,
@@ -48,21 +51,32 @@ function setCors(res, origin) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
-function buildPrompt({ name, number, color, productTitle }) {
-  const garment = `${color ? color + ' ' : ''}crewneck sweatshirt${productTitle ? ` (${productTitle})` : ''}`;
+function buildPrompt({ name, number }) {
+  // The base image is the real lifestyle photo (e.g. two models, one seen from
+  // the back). We only swap the personalized NAME / NUMBER already embroidered
+  // on the back — everything else in the photo stays identical.
+  const changes = [];
+  if (name) changes.push(`change the arched NAME to read exactly "${name}"`);
+  if (number) changes.push(`change the large jersey NUMBER to read exactly "${number}"`);
   return [
-    `Use the attached product photo of a ${garment} as the exact base. This reference photo defines the garment — keep its precise fabric color, material, weave/knit texture, folds, wrinkles, shadows, lighting, camera angle, framing and background pixel-for-pixel. Do not restyle, recolor, crop, blur or regenerate the garment.`,
-    `Add custom EMBROIDERY on the back in a classic American varsity / sports-jersey style:`,
-    name ? `- the name "${name}" arched across the upper back,` : '',
-    number ? `- a large jersey number "${number}" centered below the name.` : '',
-    `Use bold block lettering in white with a colored outline that matches the garment's team colors.`,
-    `The lettering must look like real, HIGH-DETAIL stitched embroidery / twill appliqué: visible individual satin-stitch threads, slightly raised 3D relief with soft drop shadow, a stitched outline border, and thread sheen — the same premium embroidery quality and material finish as the reference product photo. It must sit on the fabric and follow its folds, wrinkles and lighting so it looks physically sewn on, not printed or pasted.`,
-    `Keep the garment shape, color, background and everything else EXACTLY the same — only add the embroidery. Output must be sharp and high-resolution, matching the reference photo's clarity.`,
-    `Render the text EXACTLY as written above: correct spelling, no extra or missing characters, no random letters.`,
-  ].filter(Boolean).join('\n');
+    `This is a real photo of people wearing sweatshirts. One person is shown from the BACK, and the back of that sweatshirt already has an embroidered arched NAME above a large jersey NUMBER.`,
+    `Edit ONLY that personalized text: ${changes.join(' and ')}.`,
+    `Reproduce the EXACT same embroidery already in the photo for the new text — identical block lettering style, white twill fill with the same colored stitched outline, the same pinstripe/fabric texture, raised sewn-on look, the same size, position, arch curvature, perspective, fabric folds and lighting. The replacement must look physically embroidered exactly like the original, just with different characters.`,
+    `Do NOT change anything else in the image. Keep BOTH people, their faces, hair, skin, hands and poses; keep the other person's front "Florida" script and gator logo; keep the stadium crowd, seats, field, colors, framing, grain and lighting all pixel-for-pixel identical.`,
+    `Return the FULL original photo with only the name/number swapped — do not crop, zoom in, change the composition, or output a separate garment-only image.`,
+    `Spell the new text EXACTLY as written above: correct characters only, no extra or missing letters.`,
+  ].join('\n');
 }
 
 async function fetchBaseImage(url) {
+  // Accept an inline data: URL (base64) as well as a normal http(s) URL.
+  if (url.startsWith('data:')) {
+    const m = url.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+    if (!m) throw new Error('Malformed data URL');
+    const mime = m[1] || 'image/png';
+    const data = m[2] ? m[3] : Buffer.from(decodeURIComponent(m[3])).toString('base64');
+    return { mime, data };
+  }
   const r = await fetch(url);
   if (!r.ok) throw new Error(`Cannot fetch base image (${r.status})`);
   const mime = r.headers.get('content-type') || 'image/png';
@@ -99,7 +113,7 @@ export default async function handler(req, res) {
     const baseImageUrl = String(body.baseImageUrl || '').trim();
 
     if (!name && !number) return res.status(400).json({ ok: false, error: 'Enter a name or a number first.' });
-    if (!/^https?:\/\//i.test(baseImageUrl)) return res.status(400).json({ ok: false, error: 'A valid baseImageUrl is required.' });
+    if (!/^(https?:\/\/|data:image\/)/i.test(baseImageUrl)) return res.status(400).json({ ok: false, error: 'A valid baseImageUrl is required.' });
 
     const base = await fetchBaseImage(baseImageUrl);
     const prompt = buildPrompt({ name, number, color, productTitle });
