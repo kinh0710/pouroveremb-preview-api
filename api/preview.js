@@ -64,7 +64,7 @@ function buildPrompt({ name, number }) {
     `Reproduce the EXACT same embroidery already in the photo for the new text — identical block lettering style, white twill fill with the same colored stitched outline, the same pinstripe/fabric texture, raised sewn-on look, the same size, position, arch curvature, perspective, fabric folds and lighting. The replacement must look physically embroidered exactly like the original, just with different characters.`,
     `Do NOT change anything else in the image. Keep BOTH people, their faces, hair, skin, hands and poses; keep the other person's front "Florida" script and gator logo; keep the stadium crowd, seats, field, colors, framing, grain and lighting all pixel-for-pixel identical.`,
     `Return the FULL original photo with only the name/number swapped — do not crop, zoom in, change the composition, or output a separate garment-only image.`,
-    `Spell the new text EXACTLY as written above: correct characters only, no extra or missing letters.`,
+    `Spell the new text EXACTLY as written above: correct characters only, no extra or missing letters. Render the name in the same ALL-CAPS block style as the original, but PRESERVE the spaces between words exactly — if the name contains a space, keep two separate words with a clear gap (e.g. "DAT BEO", never "DATBEO").`,
   ].join('\n');
 }
 
