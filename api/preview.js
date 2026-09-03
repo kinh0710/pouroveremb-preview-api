@@ -1,7 +1,10 @@
 // POST /api/preview
-// Body JSON: { name, number, color, size, productTitle, baseImageUrl }
-// Returns:   { ok:true, image:"data:image/png;base64,...", promptUsed }
+// Body JSON: { name, number, color, productTitle, baseImageUrl, model? }
+//   model  - optional, allow-listed override to force one model (for testing)
+// Returns:   { ok:true, image:"data:image/png;base64,...", modelUsed, promptUsed }
 //            { ok:false, error:"..." }
+// On a 503/429 (overload / rate-limit) the primary model falls back to the
+// GEMINI_FALLBACK_MODELS in order, so the preview keeps working when Pro is busy.
 //
 // Takes the base garment photo + the customer's NAME/NUMBER and asks Google
 // Gemini's image model to render an AI preview with the embroidery applied.
@@ -12,6 +15,22 @@
 // Default: Nano Banana Pro (Gemini 3 Pro Image) — best-in-class text rendering,
 // which matters for getting NAME/NUMBER spelled correctly.
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-pro-image-preview';
+
+// If the primary model is overloaded (503) or rate-limited (429), fall through
+// to these in order. Keeps the preview working when Pro is busy.
+const GEMINI_FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS ||
+  'gemini-3.1-flash-image,gemini-2.5-flash-image')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+
+// Model ids a request may explicitly ask for (via body.model), for testing.
+const ALLOWED_MODELS = new Set([
+  GEMINI_MODEL,
+  ...GEMINI_FALLBACK_MODELS,
+  'gemini-3-pro-image-preview',
+  'gemini-3.1-flash-image',
+  'gemini-3.1-flash-lite-image',
+  'gemini-2.5-flash-image',
+]);
 
 // Comma-separated list of storefront origins allowed to call this API.
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
@@ -84,8 +103,6 @@ export default async function handler(req, res) {
 
     const base = await fetchBaseImage(baseImageUrl);
     const prompt = buildPrompt({ name, number, color, productTitle });
-
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`;
     const payload = {
       contents: [{
         role: 'user',
@@ -96,24 +113,38 @@ export default async function handler(req, res) {
       }],
     };
 
-    const gResp = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify(payload),
-    });
-    const gJson = await gResp.json().catch(() => ({}));
-    if (!gResp.ok) {
-      const msg = gJson?.error?.message || JSON.stringify(gJson).slice(0, 300);
-      throw new Error(`Gemini API error (${gResp.status}): ${msg}`);
+    // Which models to try, in order. An explicit (allow-listed) body.model wins.
+    const requested = typeof body.model === 'string' && ALLOWED_MODELS.has(body.model) ? body.model : null;
+    const models = requested ? [requested] : [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS];
+
+    let lastErr = '';
+    for (const model of models) {
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+      const gResp = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify(payload),
+      });
+      const gJson = await gResp.json().catch(() => ({}));
+
+      if (gResp.ok) {
+        const img = extractImage(gJson);
+        if (img) {
+          return res.status(200).json({ ok: true, image: `data:${img.mime};base64,${img.data}`, modelUsed: model, promptUsed: prompt });
+        }
+        const finish = gJson?.candidates?.[0]?.finishReason || 'unknown';
+        lastErr = `Model ${model} returned no image (finishReason: ${finish}).`;
+        continue; // try next model
+      }
+
+      const msg = gJson?.error?.message || JSON.stringify(gJson).slice(0, 200);
+      lastErr = `Gemini API error (${gResp.status}) on ${model}: ${msg}`;
+      // Only fall through on transient overload / rate-limit; otherwise stop.
+      const transient = gResp.status === 503 || gResp.status === 429 || /overload|high demand|unavailable|exhaust/i.test(msg);
+      if (!transient) break;
     }
 
-    const img = extractImage(gJson);
-    if (!img) {
-      const finish = gJson?.candidates?.[0]?.finishReason || 'unknown';
-      throw new Error(`Model returned no image (finishReason: ${finish}). Try again or adjust the text.`);
-    }
-
-    return res.status(200).json({ ok: true, image: `data:${img.mime};base64,${img.data}`, promptUsed: prompt });
+    throw new Error(lastErr || 'All image models failed');
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
