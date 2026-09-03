@@ -43,9 +43,23 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
 // Let a long Gemini call finish (Vercel: 60s on Hobby, up to 300s on Pro).
 export const config = { maxDuration: 60 };
 
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  if (ALLOWED_ORIGINS.includes('*')) return true;      // set ALLOWED_ORIGINS=* to allow everyone
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  try {
+    const host = new URL(origin).host;
+    // Shopify theme-editor preview + storefront run on these:
+    if (host.endsWith('.myshopify.com')) return true;
+    if (host === 'admin.shopify.com') return true;
+  } catch (e) { /* ignore */ }
+  return false;
+}
+
 function setCors(res, origin) {
-  const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  res.setHeader('Access-Control-Allow-Origin', allowed || '*');
+  // Echo the caller's origin when allowed (required for the browser to accept it).
+  const allowed = isAllowedOrigin(origin) ? origin : (ALLOWED_ORIGINS[0] || '*');
+  res.setHeader('Access-Control-Allow-Origin', allowed);
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
