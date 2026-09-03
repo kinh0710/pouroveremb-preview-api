@@ -1,0 +1,13 @@
+{
+  "name": "pouroveremb-preview-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AI embroidery-preview backend for pouroveremb.com (Google Gemini image, Vercel serverless).",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test:local": "node scripts/test-local.mjs"
+  }
+}
