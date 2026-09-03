@@ -8,7 +8,10 @@
 // Synchronous: the request waits for Gemini and returns the image inline as a
 // data URL (no storage/queue needed — simplest thing that deploys on Vercel).
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash-image';
+// Gemini IMAGE model ("Nano Banana" family). Override via env GEMINI_MODEL.
+// Default: Nano Banana Pro (Gemini 3 Pro Image) — best-in-class text rendering,
+// which matters for getting NAME/NUMBER spelled correctly.
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-pro-image-preview';
 
 // Comma-separated list of storefront origins allowed to call this API.
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
