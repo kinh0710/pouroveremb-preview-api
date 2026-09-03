@@ -51,13 +51,13 @@ function setCors(res, origin) {
 function buildPrompt({ name, number, color, productTitle }) {
   const garment = `${color ? color + ' ' : ''}crewneck sweatshirt${productTitle ? ` (${productTitle})` : ''}`;
   return [
-    `Edit this photo of a ${garment}.`,
+    `Use the attached product photo of a ${garment} as the exact base. This reference photo defines the garment — keep its precise fabric color, material, weave/knit texture, folds, wrinkles, shadows, lighting, camera angle, framing and background pixel-for-pixel. Do not restyle, recolor, crop, blur or regenerate the garment.`,
     `Add custom EMBROIDERY on the back in a classic American varsity / sports-jersey style:`,
     name ? `- the name "${name}" arched across the upper back,` : '',
     number ? `- a large jersey number "${number}" centered below the name.` : '',
     `Use bold block lettering in white with a colored outline that matches the garment's team colors.`,
-    `Make it look like real stitched embroidery / twill appliqué that follows the fabric folds, wrinkles and lighting.`,
-    `Keep the garment shape, color, background and everything else in the photo EXACTLY the same — only add the embroidery.`,
+    `The lettering must look like real, HIGH-DETAIL stitched embroidery / twill appliqué: visible individual satin-stitch threads, slightly raised 3D relief with soft drop shadow, a stitched outline border, and thread sheen — the same premium embroidery quality and material finish as the reference product photo. It must sit on the fabric and follow its folds, wrinkles and lighting so it looks physically sewn on, not printed or pasted.`,
+    `Keep the garment shape, color, background and everything else EXACTLY the same — only add the embroidery. Output must be sharp and high-resolution, matching the reference photo's clarity.`,
     `Render the text EXACTLY as written above: correct spelling, no extra or missing characters, no random letters.`,
   ].filter(Boolean).join('\n');
 }
