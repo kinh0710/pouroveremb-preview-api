@@ -4,3 +4,4 @@ node_modules
 .vercel
 *.log
 out-*.png
+.DS_Store
